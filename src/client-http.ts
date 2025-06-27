@@ -169,14 +169,10 @@ export function isJSONSerializable(value: any) {
 }
 
 function getBody(body: any, options?: FetchRequestOptions) {
-	if (!body) { return null; }
-
 	const headers = new Headers(options?.headers);
 	if (isJSONSerializable(body) && !headers.has("content-type")) {
-    options?.headers
 		return JSON.stringify(body);
 	}
-
 	return body;
 }
 
@@ -273,10 +269,6 @@ export const createClient = <R extends Router | Router["endpoints"]>(baseOptions
       // FIXME: if FormData is provided, merging "baseOptions.body" with
       // "options.body" will not work as intended
       //
-      let body = (baseOptions.body)
-        ? { ...baseOptions.body, ...(options[0]?.body || {}) }
-        : options[0]?.body;
-
       const query = (baseOptions.query)
         ? { ...baseOptions.query, ...(options[0]?.query || {}) }
         : options[0]?.query;
@@ -291,17 +283,25 @@ export const createClient = <R extends Router | Router["endpoints"]>(baseOptions
           : options[0]?.headers
       );
 
-      if (isJSONSerializable(body) && !headers.has("content-type")) {
-        headers.set("content-type", "application/json");
-        for (const [key, value] of Object.entries(body)) {
-          if (value instanceof Date) {
-            body[key] = value.toISOString();
+      let body = undefined;
+
+      if (method !== "GET") {
+        body = (baseOptions.body)
+          ? { ...baseOptions.body, ...(options[0]?.body || {}) }
+          : options[0]?.body;
+
+        if (isJSONSerializable(body) && !headers.has("content-type")) {
+          headers.set("content-type", "application/json");
+          for (const [key, value] of Object.entries(body)) {
+            if (value instanceof Date) {
+              body[key] = value.toISOString();
+            }
           }
+          body = JSON.stringify(body);
         }
-        body = JSON.stringify(body);
       }
 
-      const mergedOptions = {
+      const reqInit = {
         credentials: options[0]?.credentials || "include",
         ...baseOptions,
         ...options[0],
@@ -312,21 +312,19 @@ export const createClient = <R extends Router | Router["endpoints"]>(baseOptions
         method,
       };
 
-      mergedOptions.body = getBody(body, mergedOptions);
+      const url = getURL(path.toString(), reqInit);
 
-      const url = getURL(path.toString(), mergedOptions);
-
-      const response = await fetch(url, mergedOptions);
+      const response = await fetch(url, reqInit);
       const contentType = response.headers.get("content-type");
 
       let data: any;
       let error = null;
 
       // TODO: improve content-type detection here!
-      if (contentType?.indexOf("json")) {
+      if (contentType?.indexOf("json") !== -1) {
         data = await response.json();
 
-      } else if (contentType?.indexOf("text")) {
+      } else if (contentType?.indexOf("text") !== -1) {
         data = await response.text();
 
       } else {
